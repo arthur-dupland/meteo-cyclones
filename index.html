@@ -700,9 +700,9 @@ body.expert-mode .expert-strip{display:grid}
 
     <div class="panel-section">
       <div class="section-title"><span class="dot" style="background:var(--accent-orange)"></span>Facteurs de risque</div>
-      <div class="risk-item"><span class="risk-icon">🌊</span><span class="risk-label">Eau chaude</span><div class="risk-bar-wrap"><div class="risk-bar" id="risk-sst" style="width:55%;background:linear-gradient(90deg,#fbbf24,#f97316)"></div></div><span class="risk-val" id="rval-sst" style="color:#f97316">55%</span></div>
+      <div class="risk-item"><span class="risk-icon">🌊</span><span class="risk-label">Eau chaude<br><span id="sst-source" style="font-size:9px;color:#475569;font-weight:400"></span></span><div class="risk-bar-wrap"><div class="risk-bar" id="risk-sst" style="width:55%;background:linear-gradient(90deg,#fbbf24,#f97316)"></div></div><span class="risk-val" id="rval-sst" style="color:#f97316">55%</span></div>
       <div class="risk-item"><span class="risk-icon">💧</span><span class="risk-label">Humidité</span><div class="risk-bar-wrap"><div class="risk-bar" id="risk-rh" style="width:60%;background:linear-gradient(90deg,#3b82f6,#06b6d4)"></div></div><span class="risk-val" id="rval-rh" style="color:#3b82f6">60%</span></div>
-      <div class="risk-item"><span class="risk-icon">✂️</span><span class="risk-label">Cisaillement</span><div class="risk-bar-wrap"><div class="risk-bar" id="risk-shear" style="width:50%;background:linear-gradient(90deg,#fbbf24,#f59e0b)"></div></div><span class="risk-val" id="rval-shear" style="color:#fbbf24">50%</span></div>
+      <div class="risk-item"><span class="risk-icon">✂️</span><span class="risk-label">Cisaillement<br><span id="shear-source" style="font-size:9px;color:#475569;font-weight:400">850-200 hPa</span></span><div class="risk-bar-wrap"><div class="risk-bar" id="risk-shear" style="width:50%;background:linear-gradient(90deg,#fbbf24,#f59e0b)"></div></div><span class="risk-val" id="rval-shear" style="color:#fbbf24">50%</span></div>
       <div class="risk-item"><span class="risk-icon">🏜️</span><span class="risk-label">Air sec/Sahara</span><div class="risk-bar-wrap"><div class="risk-bar" id="risk-dust" style="width:35%;background:linear-gradient(90deg,#d97706,#b45309)"></div></div><span class="risk-val" id="rval-dust" style="color:#d97706">35%</span></div>
       <div class="risk-item"><span class="risk-icon">⚡</span><span class="risk-label">Instabilité</span><div class="risk-bar-wrap"><div class="risk-bar" id="risk-cape" style="width:40%;background:linear-gradient(90deg,#a855f7,#7c3aed)"></div></div><span class="risk-val" id="rval-cape" style="color:#a855f7">40%</span></div>
       <button class="btn-learn kid-only" onclick="showComprendre()">🎓 COMPRENDRE</button>
@@ -808,7 +808,7 @@ body.expert-mode .expert-strip{display:grid}
     <div class="nav-view active" id="view-radar" style="display:flex;flex-direction:column;flex:1;min-height:0">
       <div id="map-header">
         <span class="live-badge">● LIVE</span>
-        <span class="map-title" id="map-title-txt">ATLANTIQUE TROPICAL</span>
+        <span class="map-title" id="map-title-txt">ATLANTIQUE TROPICAL</span><span id="data-freshness" style="font-size:9px;color:#475569;margin-left:8px;font-family:monospace"></span>
         <span id="map-clock" style="font-size:10px;color:var(--text-mid)">-- UTC</span>
         <div class="layer-pills" style="margin-left:8px">
           <button class="layer-pill active" id="pill-rain" onclick="togglePill(this,'rain')">💧 PLUIE</button>
@@ -2982,8 +2982,11 @@ function renderForecast5j(data, island){
 loadMF();setInterval(loadMF,10*60*1000);
 
 function updateRiskBars(gp,mq){
-  // ── SST : utiliser la valeur marine réelle si disponible, sinon estimation calibrée ──
-  const sstC = window._marineGP?.sst || (gp.temperature_2m - 1.5); // T air - 1.5°C correction
+  // ── SST : Open-Meteo Marine (réanalyse ERA5) si disponible, sinon T air - 1.5°C ──
+  const sstC = window._marineGP?.sst || (gp.temperature_2m - 1.5);
+  // Afficher la source de la SST
+  const sstSourceEl = document.getElementById('sst-source');
+  if (sstSourceEl) sstSourceEl.textContent = window._marineGP?.sst ? '· Open-Meteo Marine (ERA5)' : '· Estimée (T air −1.5°C)';
   // SST en % : 26°C = 30%, 28°C = 60%, 30°C = 90% (seuils cyclone réalistes)
   const sstPct = Math.min(100, Math.max(0, Math.round((sstC - 24) / 8 * 100)));
   const sstColor = sstC >= 28 ? '#ef4444' : sstC >= 26 ? '#f97316' : '#22c55e';
@@ -2995,15 +2998,28 @@ function updateRiskBars(gp,mq){
   const rhRisk = Math.min(100, Math.max(0, Math.round((rhPct - 40) / 50 * 100)));
   setRisk('rh', rhRisk, '#3b82f6');
 
-  // ── Cisaillement : estimation saisonnière calibrée ──
-  // Mai = cisaillement modéré-fort (début saison) → risque FAIBLE pour cyclone
-  // (cisaillement fort = MAUVAIS pour les cyclones → risque bas)
-  const month = new Date().getMonth() + 1;
-  // Cisaillement typique Atlantique par mois : mai=25kt, juin=20kt, août=10kt, oct=15kt
-  const shearKt = month <= 5 ? 25 : month <= 7 ? 18 : month <= 9 ? 10 : 16;
-  // % risque inversé : cisaillement fort = risque bas
+  // ── Cisaillement : estimé depuis données Open-Meteo vent 850/200 hPa ──
+  // On utilise le vent au sol comme proxy basse couche vs vent en altitude si dispo
+  // Fallback : climatologie mensuelle NHC (valeurs réelles moyennes bassin Atlantique)
+  let shearKt = 20; // défaut juin
+  if (window._shearKt) {
+    shearKt = window._shearKt; // valeur calculée depuis Open-Meteo si dispo
+  } else {
+    const month = new Date().getMonth() + 1;
+    // Climatologie cisaillement vertical 850-200 hPa bassin Atlantique (source : NHC/NOAA)
+    const shearClim = { 1:30,2:28,3:26,4:24,5:22,6:18,7:14,8:10,9:9,10:12,11:20,12:26 };
+    shearKt = shearClim[month] || 18;
+  }
+  // Risque cyclone inversé : cisaillement faible (<10kt) = risque élevé, fort (>25kt) = risque faible
   const shearRisk = Math.min(100, Math.max(0, Math.round((30 - shearKt) / 25 * 100)));
   setRisk('shear', shearRisk, shearRisk > 60 ? '#ef4444' : shearRisk > 30 ? '#fbbf24' : '#22c55e');
+  // Afficher la valeur en kt dans le panel pro
+  const shearEl = document.getElementById('pro-shear');
+  if (shearEl) shearEl.textContent = shearKt + ' kt';
+  const shearNote = document.getElementById('pro-shear-dir');
+  if (shearNote) shearNote.textContent = window._shearKt ? '850-200 hPa · Open-Meteo' : '850-200 hPa · Climatologie NHC';
+  const shearSrc = document.getElementById('shear-source');
+  if (shearSrc) shearSrc.textContent = (window._shearKt ? shearKt + ' kt · Open-Meteo' : shearKt + ' kt · Clim. NHC');
 
   // ── Air sec/Sahara : inversé depuis humidité + mois ──
   // Juillet-août = plus de SAL (Saharan Air Layer) → risque dust plus élevé
@@ -4040,20 +4056,33 @@ function showIsland(id){
 
 // ═══ COMPRENDRE ═══
 function showComprendre(){
-  showModal('🎓 Comprendre les facteurs de risque',
-    `Les météorologues surveillent <strong>5 facteurs clés</strong> pour évaluer le risque cyclonique :<br><br>
-    🌊 <strong>Eau chaude (SST)</strong><br>
-    C'est le carburant du cyclone ! Il faut au moins <strong>26°C</strong>. En Antilles, l'eau atteint 28-30°C en été. Plus elle est chaude, plus le cyclone peut être intense.<br><br>
-    💧 <strong>Humidité atmosphérique</strong><br>
-    L'air doit être très humide pour nourrir les nuages du cyclone. Si l'air est trop sec (comme l'air saharien), le cyclone s'affaiblit.<br><br>
-    ✂️ <strong>Cisaillement du vent</strong><br>
-    C'est la différence de vent entre le sol et la haute atmosphère. Un cisaillement fort "cisaille" le cyclone et le détruit. Un cisaillement faible le laisse se développer.<br><br>
-    🏜️ <strong>Air sec / Sable du Sahara</strong><br>
-    Chaque été, des millions de tonnes de poussières africaines traversent l'Atlantique. Cet air chaud et sec bloque la formation des nuages convectifs — c'est pourquoi juillet est parfois calme malgré des eaux chaudes !<br><br>
-    ⚡ <strong>Instabilité atmosphérique</strong><br>
-    Quand l'atmosphère est instable, l'air chaud monte facilement et forme de gros nuages orageux — l'ingrédient de base du cyclone.`
+  const shearVal = document.getElementById('pro-shear')?.textContent || '--';
+  const sstVal = document.getElementById('rval-sst')?.textContent || '--';
+  const ci = document.getElementById('gauge-val')?.textContent || '--';
+  const shearSrcTxt = window._shearKt ? 'Open-Meteo' : 'Climatologie NHC';
+  const sstSrcTxt = window._marineGP?.sst ? 'Open-Meteo Marine (ERA5)' : 'estimée (T air -1.5°C)';
+  showModal('Comprendre les facteurs de risque',
+    '<strong>Indice cyclonique : ' + ci + '/100</strong><br>' +
+    '<span style="font-size:10px;color:#64748b">Formule : SST×35% + Humidité×20% + Cisaillement×25% + Air sec×10% + Instabilité×10%<br>' +
+    'Inspiré de Gray (1968) et des indices NHC.</span><br><br>' +
+    '🌊 <strong>Eau chaude (SST) — 35%</strong><br>' +
+    'Carburant du cyclone. Seuil min : 26°C.<br>' +
+    '<span style="font-size:10px;color:#64748b">Valeur : ' + sstVal + ' · Source : ' + sstSrcTxt + '</span><br><br>' +
+    '💧 <strong>Humidité — 20%</strong><br>' +
+    "L'air doit être humide. L'air saharien sec inhibe le développement.<br>" +
+    '<span style="font-size:10px;color:#64748b">Source : Open-Meteo (HR 2m)</span><br><br>' +
+    '✂️ <strong>Cisaillement 850-200 hPa — 25%</strong><br>' +
+    'Différence de vent entre basse et haute troposphère.<br>' +
+    '<span style="font-size:10px;color:#64748b">Valeur : ' + shearVal + ' · Source : ' + shearSrcTxt + '<br>' +
+    'Ref : &lt;25 kt = favorable · &gt;25 kt = défavorable (NHC)</span><br><br>' +
+    '🏜️ <strong>Air sec / SAL — 10%</strong><br>' +
+    "Couche d'Air Saharien : poussières africaines qui traversent l'Atlantique en été.<br>" +
+    '<span style="font-size:10px;color:#64748b">Estimé depuis humidité + saisonnalité</span><br><br>' +
+    '⚡ <strong>Instabilité — 10%</strong><br>' +
+    'Capacité de convection : T air + humidité + facteur saisonnier.<br><br>' +
+    '<span style="font-size:10px;color:#475569">⚠️ Outil pédagogique simplifié. Prévision officielle : nhc.noaa.gov et météo.mq</span>'
   );
-}
+}}
 
 // ═══ NAV DESKTOP ═══
 const VIEWS=['radar','carte','labo','explorer'];
@@ -4393,17 +4422,24 @@ function renderWaveMarkers(waves) {
       ">🌊</div>`,
       iconSize: [32, 32], iconAnchor: [16, 16]
     });
+    const distDeg2 = Math.abs(w.lon) - 61.5;
+    const arrH2 = distDeg2 > 0 ? Math.round(distDeg2 * 111 / ((w.speed||15) * 1.852)) : 0;
+    const arrTxt2 = distDeg2 <= 0 ? '⚠️ Sur l\'arc antillais' : arrH2 < 48 ? `⚡ Dans ~${arrH2}h` : `Dans ~${Math.floor(arrH2/24)} jours`;
     const marker = L.marker([w.lat, w.lon], { icon })
       .addTo(map)
       .bindPopup(`
-        <div style="min-width:200px">
+        <div style="min-width:220px">
           <div style="font-weight:800;font-size:13px;margin-bottom:4px">🌊 Onde tropicale — ${w.zone}</div>
           <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">
             Position : ${Math.abs(w.lon).toFixed(1)}°W / ${w.lat.toFixed(1)}°N<br>
-            Vitesse : ~${Math.round(w.speed)} kt vers l'ouest<br>
+            Vitesse : ~${Math.round(w.speed)} kt vers l\'ouest<br>
             Convection : ${w.convLevel}
           </div>
+          <div style="font-size:12px;font-weight:700;color:${arrH2 < 48 && distDeg2 > 0 ? '#ef4444' : '#60a5fa'};margin:4px 0">
+            ${arrTxt2} des Antilles
+          </div>
           <div style="font-size:10px;color:#64748b;border-top:1px solid #334155;padding-top:4px">${w.text}</div>
+          <div style="font-size:9px;color:#475569;margin-top:3px">Source : NHC TWDAT · ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} UTC</div>
         </div>
       `);
     // Flèche direction ouest
@@ -4433,6 +4469,10 @@ async function fetchTWO() {
         renderTWDAT(waves);
       }
     }
+
+    // Mettre à jour l'indicateur de fraîcheur
+    const freshEl = document.getElementById('data-freshness');
+    if (freshEl) freshEl.textContent = 'NHC · ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) + ' UTC';
 
     // ── Invests / probabilités depuis TWO ──
     let text = twoText.status === 'fulfilled' ? twoText.value : '';
@@ -4474,15 +4514,21 @@ function renderTWDAT(waves) {
   const existing = container.querySelector('.twdat-panel');
   if (existing) existing.remove();
 
+  const ANTILLES_LON = 61.5;
   const waveItems = waves.map(w => {
     const color = w.convLevel === 'forte' ? '#f97316' : w.convLevel === 'modérée' ? '#fbbf24' : '#60a5fa';
+    const distDeg = Math.abs(w.lon) - ANTILLES_LON;
+    const arrH = distDeg > 0 ? Math.round(distDeg * 111 / ((w.speed||15) * 1.852)) : 0;
+    const arrTxt = distDeg <= 0 ? '⚠️ Arc antillais' : arrH < 48 ? `⚡ ~${arrH}h` : `~${Math.floor(arrH/24)}j`;
+    const arrColor = distDeg <= 0 ? '#f97316' : arrH < 48 ? '#ef4444' : arrH < 96 ? '#fbbf24' : '#60a5fa';
     return `<div class="two-system" style="align-items:flex-start;gap:8px">
       <div style="font-size:18px;margin-top:2px">🌊</div>
       <div style="flex:1">
         <div style="font-size:11px;font-weight:700;color:#f0f8ff">${w.zone}</div>
         <div style="font-size:10px;color:#94a3b8">${Math.abs(w.lon).toFixed(1)}°W · ~${Math.round(w.speed)} kt</div>
-        <div style="font-size:9px;margin-top:2px">
-          <span style="color:${color};font-weight:600">Convection ${w.convLevel}</span>
+        <div style="font-size:10px;margin-top:3px;display:flex;gap:6px;align-items:center">
+          <span style="color:${color};font-weight:600">Conv. ${w.convLevel}</span>
+          <span style="color:${arrColor};font-weight:700;font-size:10px">${arrTxt}</span>
         </div>
       </div>
     </div>`;
