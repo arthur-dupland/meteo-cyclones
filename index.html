@@ -622,7 +622,7 @@ body.expert-mode .expert-strip{display:grid}
   </div>
   <nav id="main-nav">
     <button class="nav-btn active" id="nav-radar" onclick="setNav('radar',this)"><span class="nav-icon">📡</span>RADAR</button>
-    <button class="nav-btn" id="nav-carte" onclick="setNav('carte',this)"><span class="nav-icon">🛰️</span>MODÈLES</button>
+    <button class="nav-btn" id="nav-carte" onclick="setNav('carte',this)"><span class="nav-icon">🗺️</span>CARTE</button>
     <button class="nav-btn" id="nav-labo" onclick="setNav('labo',this)"><span class="nav-icon">🔬</span>LABO</button>
     <button class="nav-btn" id="nav-explorer" onclick="setNav('explorer',this)"><span class="nav-icon">🔭</span>EXPLORER</button>
     <button class="nav-btn" onclick="openDefisModal()"><span class="nav-icon">🏆</span>DÉFIS</button>
@@ -847,10 +847,10 @@ body.expert-mode .expert-strip{display:grid}
       </div>
       <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:30px;text-align:center">
         <div style="font-size:48px">🌊</div>
-        <div style="font-family:'Orbitron',sans-serif;font-size:16px;color:var(--accent-cyan)">Aucun système actif</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:16px;color:var(--accent-cyan)">Bassin calme</div>
         <div style="font-size:13px;color:var(--text-mid);max-width:400px;line-height:1.7">
-          Les modèles ECMWF, GFS, UKMET, HWRF et les trajectoires NHC s'affichent automatiquement dès qu'une dépression, tempête ou ouragan est actif dans le bassin.<br>
-          <span style='color:#60a5fa;font-size:11px'>📡 Les ondes tropicales et perturbations sont visibles dans l'onglet <strong>RADAR</strong>.</span>
+          Aucune trajectoire à afficher pour l'instant.<br>
+          Pendant la saison cyclonique (juin–novembre), les trajectoires des systèmes actifs apparaîtront ici avec les prévisions de chaque modèle.
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px">
           <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:11px;color:var(--text-mid);text-align:center">
@@ -1327,9 +1327,9 @@ body.expert-mode .expert-strip{display:grid}
     <!-- Section bassin calme -->
     <div style="text-align:center;padding:30px 20px">
       <div style="font-size:48px;margin-bottom:12px">🌊</div>
-      <div style="font-family:'Orbitron',sans-serif;font-size:16px;color:var(--accent-cyan);margin-bottom:10px">Aucun système actif</div>
+      <div style="font-family:'Orbitron',sans-serif;font-size:16px;color:var(--accent-cyan);margin-bottom:10px">Bassin calme</div>
       <div style="font-size:13px;color:var(--text-mid);line-height:1.7;margin-bottom:20px">
-        Trajectoires et modèles s'affichent dès qu'un système est actif.<br>
+        Aucune trajectoire à afficher.<br>
         Les modèles et le cône d'incertitude apparaîtront ici pendant la saison cyclonique (juin–novembre).
       </div>
       
@@ -1415,7 +1415,7 @@ body.expert-mode .expert-strip{display:grid}
 <!-- BOTTOM NAV -->
 <div id="bottom-nav">
   <div class="bottom-nav-items" style="overflow-x:auto;justify-content:flex-start;gap:0;padding:0 4px">
-    <button class="bnav-btn active" id="bnav-home" onclick="mobileNav('home',this)"><span class="bicon">🛰️</span>MODÈLES</button>
+    <button class="bnav-btn active" id="bnav-home" onclick="mobileNav('home',this)"><span class="bicon">🗺️</span>CARTE</button>
     <button class="bnav-btn" id="bnav-radar" onclick="mobileNav('radar',this)"><span class="bicon">📡</span>RADAR</button>
     <button class="bnav-btn" id="bnav-models" onclick="mobileNav('models',this)"><span class="bicon">🎯</span>MODÈLES</button>
     <button class="bnav-btn" id="bnav-alerts" onclick="mobileNav('alerts',this)"><span class="bicon">🚨</span>ALERTES</button>
@@ -1716,18 +1716,32 @@ function drawModelTrack(modelName) {
   const mc = MODEL_COLORS[modelName] || { color: '#ffffff' };
   const offset = MODEL_OFFSETS[modelName] || { lat: 0, lon: 0 };
   
-  // Utiliser données réelles si cyclone actif, sinon Hugo pédagogique
-  let track;
-  if (window.activeCyclones && window.activeCyclones.length > 0 && window.activeCyclones[0].track) {
-    track = window.activeCyclones[0].track.map(p => [p.lat, p.lon]);
+  // Utiliser la vraie trajectoire NHC si disponible, sinon Hugo pédagogique
+  const activeCyc = window.activeCyclones?.[0];
+  const hasRealTrack = activeCyc?.track?.length > 1;
+  
+  let trackPoints; // [{lat, lon, h, status}]
+  if (hasRealTrack) {
+    // Trajectoire réelle avec décalage par modèle (incertitude réaliste)
+    trackPoints = activeCyc.track.map((pt, i) => {
+      const spread = i / activeCyc.track.length;
+      if (modelName === 'CONSENSUS') return pt; // CONSENSUS = trajectoire officielle NHC exacte
+      return {
+        ...pt,
+        lat: pt.lat + offset.lat * spread * 0.5,
+        lon: pt.lon + offset.lon * spread * 0.5,
+      };
+    });
   } else {
-    track = buildModelTrack(HUGO_TRACK, offset);
+    // Bassin calme — Hugo 1989 pédagogique
+    trackPoints = buildModelTrack(HUGO_TRACK, offset).map((pt, i) => ({ lat: pt[0], lon: pt[1], h: i*6 }));
   }
   
+  const track = trackPoints.map(p => [p.lat, p.lon]);
   const isDashed = modelName !== 'CONSENSUS';
   const layer = L.layerGroup();
   
-  // Ligne de trajectoire
+  // Ligne de trajectoire — pointillés si post-tropical
   L.polyline(track, {
     color: mc.color,
     weight: modelName === 'CONSENSUS' ? 3 : 2,
@@ -1736,18 +1750,25 @@ function drawModelTrack(modelName) {
     smoothFactor: 1.5
   }).addTo(layer);
   
-  // Points clés (toutes les 24h environ)
-  track.filter((_, i) => i % 4 === 0).forEach((pt, i) => {
-    const h = i * 24;
-    L.circleMarker(pt, {
-      radius: modelName === 'CONSENSUS' ? 5 : 3,
-      color: mc.color,
-      fillColor: mc.color,
-      fillOpacity: 0.8,
-      weight: 1
+  // Points clés avec popup informatif
+  trackPoints.forEach((pt, i) => {
+    if (i === 0) return; // pas de marqueur sur position courante (déjà le marker cyclone)
+    const isLast = i === trackPoints.length - 1;
+    const isDissipating = pt.dissipates || /POST-TROP|DISSIPATED|REMNANT/i.test(pt.status||'');
+    const ptColor = isDissipating ? '#94a3b8' : mc.color;
+    const radius = modelName === 'CONSENSUS' ? (isLast ? 7 : 5) : 3;
+    
+    L.circleMarker([pt.lat, pt.lon], {
+      radius,
+      color: ptColor,
+      fillColor: isDissipating ? '#1e293b' : ptColor,
+      fillOpacity: isDissipating ? 0.5 : 0.8,
+      weight: isDissipating ? 1 : 2
     }).bindPopup(
-      '<strong style="color:' + mc.color + '">' + modelName + '</strong><br>' +
-      'H+' + h + 'h · ' + pt[0].toFixed(1) + '°N ' + Math.abs(pt[1]).toFixed(1) + '°O'
+      '<strong style="color:' + ptColor + '">' + modelName + '</strong><br>' +
+      (hasRealTrack ? 'H+' + (i*12) + 'h' : 'H+' + (i*6) + 'h') +
+      ' · ' + pt.lat.toFixed(1) + '°N ' + Math.abs(pt.lon).toFixed(1) + '°O' +
+      (isDissipating ? '<br><span style="color:#94a3b8;font-size:10px">Post-tropical / dissipation</span>' : '')
     ).addTo(layer);
   });
   
@@ -2172,33 +2193,47 @@ cities.forEach(city => {
 console.log('📍 ' + cities.length + ' villes ajoutées sur la carte');
 
 // ═══ CACHE INTELLIGENT ═══
+// Durées différenciées selon la fréquence de mise à jour des sources
 const CACHE_DURATIONS = {
-  'MIATWDAT': 90 * 60 * 1000,
-  'index-at.xml': 5 * 60 * 1000,
-  'gtwo.php': 30 * 60 * 1000,
-  'opensky': 5 * 60 * 1000,
+  'MIATWDAT': 90 * 60 * 1000,    // TWDAT : rafraîchi toutes les 90min
+  'index-at.xml': 5 * 60 * 1000, // RSS NHC : 5min
+  'gtwo.php': 30 * 60 * 1000,    // TWO probabilités : 30min
+  'opensky': 5 * 60 * 1000,      // OpenSky : 5min
   'DEFAULT': 15 * 60 * 1000
 };
+
 const INVALID_CACHE_PATTERNS = ['Too many requests','Too Many Requests','Error 4','403','429','503','Access denied','Forbidden'];
+
 function getCacheDuration(key) {
   for (const [p, d] of Object.entries(CACHE_DURATIONS)) { if (key.includes(p)) return d; }
   return CACHE_DURATIONS.DEFAULT;
 }
+
 function getCached(key) {
   try {
     const cached = localStorage.getItem('ch_cache_' + key);
     if (!cached) return null;
     const data = JSON.parse(cached);
-    if (Date.now() - data.timestamp > getCacheDuration(key)) { localStorage.removeItem('ch_cache_' + key); return null; }
+    if (Date.now() - data.timestamp > getCacheDuration(key)) {
+      localStorage.removeItem('ch_cache_' + key);
+      return null;
+    }
     console.log('✅ Cache hit:', key.substring(0,60));
     return data.value;
   } catch(e) { return null; }
 }
+
 function setCache(key, value) {
   if (!value || typeof value !== 'string' || value.length < 50) return;
-  if (INVALID_CACHE_PATTERNS.some(p => value.includes(p))) { console.warn('⚠️ Réponse invalide non mise en cache:', value.substring(0,60)); return; }
-  try { localStorage.setItem('ch_cache_' + key, JSON.stringify({ timestamp: Date.now(), value })); } catch(e) {}
+  if (INVALID_CACHE_PATTERNS.some(p => value.includes(p))) {
+    console.warn('⚠️ Réponse invalide non mise en cache:', value.substring(0, 60));
+    return;
+  }
+  try {
+    localStorage.setItem('ch_cache_' + key, JSON.stringify({ timestamp: Date.now(), value }));
+  } catch(e) { console.warn('Cache storage failed:', e); }
 }
+
 function purgeStaleCache() {
   const toDelete = [];
   for (let i = 0; i < localStorage.length; i++) {
@@ -2206,8 +2241,12 @@ function purgeStaleCache() {
     if (!k?.startsWith('ch_cache_')) continue;
     try {
       const data = JSON.parse(localStorage.getItem(k));
+      const age = Date.now() - (data.timestamp || 0);
       const val = typeof data.value === 'string' ? data.value : '';
-      if ((Date.now() - (data.timestamp||0)) > 24*60*60*1000 || INVALID_CACHE_PATTERNS.some(p => val.includes(p)) || /ts_or_|hu_center|td_td_|ts_arthur/.test(k)) toDelete.push(k);
+      const isStale = age > 24*60*60*1000;
+      const isInvalid = INVALID_CACHE_PATTERNS.some(p => val.includes(p));
+      const isOldArtefact = /ts_or_|hu_center|td_td_|ts_arthur/.test(k);
+      if (isStale || isInvalid || isOldArtefact) toDelete.push(k);
     } catch(e) { toDelete.push(k); }
   }
   toDelete.forEach(k => localStorage.removeItem(k));
@@ -2427,9 +2466,9 @@ async function fetchActiveCyclones() {
       let lat = null;
       let lon = null;
       
-      // Vents MAX (sustained) en priorité sur la vitesse de déplacement
+      // Vents MAX (sustained winds) en priorité sur la vitesse de déplacement
       const sustainedMatch = sys.fullText.match(/sustained\s+winds?\s+(?:of\s+)?(?:about\s+)?(\d+)\s*(mph|kt|knots)/i)
-                          || sys.fullText.match(/maximum\s+sustained[^\d]*(\d+)\s*(mph|kt|knots)/i);
+                          || sys.fullText.match(/MAX\s+WIND\s+(\d+)\s*(KT|mph)/i);
       const windMatch = sustainedMatch || sys.fullText.match(/(\d+)\s*(mph|kt|knots)/i);
       if (windMatch) {
         const value = parseInt(windMatch[1]);
@@ -2458,12 +2497,6 @@ async function fetchActiveCyclones() {
           lat = parseFloat(decMatch[1]);
           lon = parseFloat(decMatch[2]); // déjà négatif
         }
-      }
-
-      // Format décimal signé : "near 28.9, -95.7"
-      if (!lat || !lon) {
-        const decMatch = sys.fullText.match(/(?:near|located\s+near)\s+([\d.]+)[,\s]+([-][\d.]+)/i);
-        if (decMatch) { lat = parseFloat(decMatch[1]); lon = parseFloat(decMatch[2]); }
       }
 
       // Si pas de position trouvée, essayer l'API NHC GeoJSON
@@ -2510,12 +2543,35 @@ async function fetchActiveCyclones() {
         return null;
       }
       
+      // Parser la trajectoire depuis le Forecast Advisory
+      // Format NHC : "FORECAST VALID 18/0000Z 30.0N 94.2W"
+      const track = [];
+      // Point courant en premier
+      if (lat && lon) track.push({ lat, lon, h: 0, type: 'current' });
+      // Points de prévision
+      const forecastRe = /FORECAST VALID\s+(\d+)\/(\d{2})(\d{2})Z\s+([\d.]+)N\s+([\d.]+)W(?:\.\.\.(POST-TROP|DISSIPATED|INLAND|REMNANT)?)?/gi;
+      let fm;
+      while ((fm = forecastRe.exec(sys.fullText)) !== null) {
+        const fLat = parseFloat(fm[4]);
+        const fLon = -parseFloat(fm[5]);
+        const status = fm[6] || '';
+        if (fLat && fLon) {
+          track.push({ lat: fLat, lon: fLon, h: track.length * 12, status });
+        }
+      }
+      // Aussi chercher "DISSIPATED" comme point final
+      if (/FORECAST VALID.*DISSIPATED/i.test(sys.fullText) && track.length > 0) {
+        const last = track[track.length - 1];
+        last.dissipates = true;
+      }
+
       return {
         ...sys,
         lat,
         lon,
         speed,
-        pressure
+        pressure,
+        track: track.length > 1 ? track : null
       };
     }));
     
