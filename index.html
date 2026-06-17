@@ -2391,6 +2391,15 @@ async function fetchWithFallback(url, options = {}) {
       
       if (!content || content.length < 10) throw new Error('Réponse vide');
       
+      // Vérifier que la réponse n'est pas une page d'erreur HTML
+      // Si oui, passer au proxy suivant comme si c'était une erreur réseau
+      if (INVALID_CACHE_PATTERNS.some(p => content.includes(p))) {
+        throw new Error('Réponse invalide (erreur proxy)');
+      }
+      if (content.startsWith('<!DOCTYPE') || content.startsWith('<html')) {
+        throw new Error('Réponse HTML inattendue — proxy a renvoyé sa propre page');
+      }
+      
       setCache(cacheKey, content);
       return content;
       
@@ -2673,8 +2682,9 @@ async function fetchActiveCyclones() {
     // 4. Afficher sur la carte
     renderCyclonesOnMap(activeCyclones);
     
-    // 5. Mettre à jour le banner
+    // 5. Mettre à jour le banner + statut bassin
     updateCalmeBanner();
+    if (typeof evalBasinStatus === 'function') evalBasinStatus();
     
     if (activeCyclones.length > 0) {
       console.log(`🌀 ${activeCyclones.length} système(s) actif(s) détecté(s):`);
@@ -3132,13 +3142,23 @@ function updateRiskBars(gp,mq){
 
   // ── Indice global : pondération réaliste ──
   // SST = 35%, Humidité = 20%, Cisaillement = 25%, Dust = 10%, Instabilité = 10%
-  const ci = Math.round(
+  let ci = Math.round(
     sstPct * 0.35 +
     rhRisk * 0.20 +
     shearRisk * 0.25 +
     dustRisk * 0.10 +
     instRisk * 0.10
   );
+  // Plancher selon les cyclones actifs — un système nommé ne peut pas donner un indice < 40
+  const activeCycs = window.activeCyclones || [];
+  if (activeCycs.length > 0) {
+    const hasTS = activeCycs.some(c => ['TS','HU','CAT1','CAT2','CAT3','CAT4','CAT5'].includes(c.type));
+    const hasHU = activeCycs.some(c => ['HU','CAT1','CAT2','CAT3','CAT4','CAT5'].includes(c.type));
+    const hasMaj = activeCycs.some(c => ['CAT3','CAT4','CAT5'].includes(c.type));
+    if (hasMaj) ci = Math.max(ci, 75);
+    else if (hasHU) ci = Math.max(ci, 60);
+    else if (hasTS) ci = Math.max(ci, 45);
+  }
   updateGauge(Math.max(0, Math.min(100, ci)));
 }
 
@@ -4869,27 +4889,42 @@ setTimeout(() => {
 // ── Lier setBasinStatus aux cyclones actifs (hook sécurisé) ──
 // On utilise un polling sur activeCyclones plutôt qu'un hook fragile
 function evalBasinStatus() {
-  const n = window.activeCyclones?.length || 0;
+  const cyclones = window.activeCyclones || [];
+  const n = cyclones.length;
   if (n === 0) {
     const twoHtml = document.getElementById('two-container')?.innerHTML || '';
     if (twoHtml.includes('INVEST')) setBasinStatus('invest');
     else setBasinStatus('calme');
-  } else {
-    const cats = window.activeCyclones.map(c => {
-      const w = c.windSpeed || 0;
-      if (w >= 137) return 3;
-      if (w >= 64) return 2;
-      return 1;
-    });
-    const maxCat = Math.max(...cats);
-    if (maxCat === 3) setBasinStatus('majeur');
-    else if (maxCat === 2) setBasinStatus('cyclone');
-    else setBasinStatus('depression');
+    return;
+  }
+  // speed est en km/h dans notre objet cyclone
+  // TS = 63-118 km/h, HU = >119 km/h, majeur = >178 km/h
+  const cats = cyclones.map(c => {
+    const w = c.speed || 0; // km/h
+    const type = c.type || '';
+    if (type === 'CAT5' || type === 'CAT4' || type === 'CAT3' || w >= 178) return 3; // majeur
+    if (type === 'CAT2' || type === 'CAT1' || type === 'HU' || w >= 119) return 2;   // ouragan
+    if (type === 'TS' || w >= 63) return 1;                                           // tempête/dépression
+    return 0;
+  });
+  const maxCat = Math.max(...cats);
+  if (maxCat >= 3) setBasinStatus('majeur');
+  else if (maxCat === 2) setBasinStatus('cyclone');
+  else if (maxCat === 1) setBasinStatus('depression');
+  else setBasinStatus('calme');
+  
+  // Aussi mettre à jour l'indice cyclonique pour refléter le système actif
+  // Un TS actif = indice minimum 40, un ouragan = 70+
+  const baseCI = maxCat >= 3 ? 80 : maxCat === 2 ? 65 : maxCat === 1 ? 45 : null;
+  if (baseCI !== null) {
+    const currentCI = parseInt(document.getElementById('gauge-val')?.textContent || '0');
+    if (currentCI < baseCI) updateGauge(baseCI);
   }
 }
-// Lancer evalBasinStatus après chaque fetch cyclones (polling sûr)
-setInterval(evalBasinStatus, 5 * 60 * 1000);
-setTimeout(evalBasinStatus, 3000); // Premier check après 3s
+// Appeler evalBasinStatus après chaque fetch cyclones réussi
+// ET sur un timer de secours toutes les 2 minutes
+setInterval(evalBasinStatus, 2 * 60 * 1000);
+setTimeout(evalBasinStatus, 4000); // Premier check après 4s (fetch terminé)
 
 // Données marine → affichage
 const _origFetchMarine = fetchMarine;
