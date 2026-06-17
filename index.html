@@ -2353,7 +2353,6 @@ const PROXY_LIST = [
   'https://corsproxy.io/?',                   // texte brut direct (priorité)
   'https://api.codetabs.com/v1/proxy?quest=', // texte brut direct
   'https://api.allorigins.win/get?url=',      // JSON wrapper {contents} (fallback)
-  'https://thingproxy.freeboard.io/fetch/'    // fallback texte brut
 ];
 
 async function fetchWithFallback(url, options = {}) {
@@ -3188,8 +3187,22 @@ function getSimFallback(){
 async function fetchOpenSky(){
   const url='https://opensky-network.org/api/states/all?lamin=-5&lomin=-100&lamax=35&lomax=-10';
   try{
-    // Utiliser fetchWithFallback pour cache + multi-proxy
-    const response = await fetchWithFallback(url);
+    // OpenSky : allorigins est le seul proxy qui gère les paramètres GET complexes
+    // codetabs et corsproxy échouent avec 400 sur les URLs avec & 
+    const cacheKey = 'fetch_' + url;
+    const cached = getCached(cacheKey);
+    let response;
+    if (cached) {
+      response = cached;
+    } else {
+      const r = await fetch(
+        'https://api.allorigins.win/get?url=' + encodeURIComponent(url),
+        { signal: AbortSignal.timeout(10000) }
+      );
+      const d = await r.json();
+      response = d.contents || '';
+      if (response && response.length > 50) setCache(cacheKey, response);
+    }
     const j = typeof response === 'string' ? JSON.parse(response) : 
               response.contents ? JSON.parse(response.contents) : response;
     
@@ -4640,7 +4653,9 @@ async function fetchTWO() {
     // Fetch en parallèle : TWO (probabilités) + TWDAT (discussion avec ondes)
     const [twoText, twdatText] = await Promise.allSettled([
       fetchWithFallback('https://www.nhc.noaa.gov/gtwo.php?basin=atlc&fdays=5'),
-      fetchWithFallback('https://www.nhc.noaa.gov/text/MIATWDAT.shtml')
+      // allorigins fonctionne pour MIATWDAT, corsproxy renvoie une page HTML d'erreur
+      fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.nhc.noaa.gov/text/MIATWDAT.shtml'), {signal: AbortSignal.timeout(12000)})
+        .then(r => r.json()).then(d => d.contents || '').catch(() => '')
     ]);
 
     // ── Ondes tropicales depuis TWDAT ──
