@@ -622,7 +622,7 @@ body.expert-mode .expert-strip{display:grid}
   </div>
   <nav id="main-nav">
     <button class="nav-btn active" id="nav-radar" onclick="setNav('radar',this)"><span class="nav-icon">📡</span>RADAR</button>
-    <button class="nav-btn" id="nav-carte" onclick="setNav('carte',this)"><span class="nav-icon">🗺️</span>CARTE</button>
+    <button class="nav-btn" id="nav-carte" onclick="setNav('carte',this)"><span class="nav-icon">🛰️</span>MODÈLES</button>
     <button class="nav-btn" id="nav-labo" onclick="setNav('labo',this)"><span class="nav-icon">🔬</span>LABO</button>
     <button class="nav-btn" id="nav-explorer" onclick="setNav('explorer',this)"><span class="nav-icon">🔭</span>EXPLORER</button>
     <button class="nav-btn" onclick="openDefisModal()"><span class="nav-icon">🏆</span>DÉFIS</button>
@@ -1319,7 +1319,7 @@ body.expert-mode .expert-strip{display:grid}
     </button>
     
     <div style="font-size:10px;color:var(--text-dim);line-height:1.6;padding:12px;background:var(--bg-card);border-radius:8px;border:1px solid var(--border)">
-      <strong style="color:var(--accent-cyan)">💡 Astuce :</strong> Le CONSENSUS combine tous les modèles et est généralement le plus fiable. Les trajectoires apparaissent sur la carte principale (onglet CARTE).
+      <strong style="color:var(--accent-cyan)">💡 Astuce :</strong> Le CONSENSUS combine tous les modèles et est généralement le plus fiable. Les trajectoires apparaissent sur la carte principale (onglet MODÈLES).
     </div>
   </div>
   
@@ -1415,7 +1415,7 @@ body.expert-mode .expert-strip{display:grid}
 <!-- BOTTOM NAV -->
 <div id="bottom-nav">
   <div class="bottom-nav-items" style="overflow-x:auto;justify-content:flex-start;gap:0;padding:0 4px">
-    <button class="bnav-btn active" id="bnav-home" onclick="mobileNav('home',this)"><span class="bicon">🗺️</span>CARTE</button>
+    <button class="bnav-btn active" id="bnav-home" onclick="mobileNav('home',this)"><span class="bicon">🛰️</span>MODÈLES</button>
     <button class="bnav-btn" id="bnav-radar" onclick="mobileNav('radar',this)"><span class="bicon">📡</span>RADAR</button>
     <button class="bnav-btn" id="bnav-models" onclick="mobileNav('models',this)"><span class="bicon">🎯</span>MODÈLES</button>
     <button class="bnav-btn" id="bnav-alerts" onclick="mobileNav('alerts',this)"><span class="bicon">🚨</span>ALERTES</button>
@@ -3359,22 +3359,48 @@ async function updatePredCount(){
 
 // ═══ MODALS CLUB ═══
 function showAbout(){
-  showModal('ℹ️ À propos & APIs',
-    '<strong>Cyclone Hunters</strong> — App pédagogique pour les 10-14 ans des Antilles françaises 🌀<br><br>' +
-    '<strong style="color:var(--accent-cyan)">📡 APIs & Sources de données</strong><br><br>' +
-    '🌀 <strong>NHC RSS</strong> — Bulletins tropicaux + INVEST (nhc.noaa.gov)<br>' +
-    '🌤️ <strong>Open-Meteo</strong> — Météo Guadeloupe & Martinique live<br>' +
-    '🚨 <strong>Météo-France</strong> — Alertes vigilance DOM-TOM<br>' +
-    '✈️ <strong>OpenSky Network</strong> — Tracking avions NOAA WC-130J<br>' +
-    '🗺️ <strong>Esri ArcGIS</strong> — Fond de carte océan + labels<br>' +
-    '🔄 <strong>Proxies CORS</strong> — AllOrigins, CorsProxy, CodeTabs (fallback)<br>' +
-    '🏆 <strong>Firebase Firestore</strong> — Club famille, XP, votes, classement<br>' +
-    '💾 <strong>Cache localStorage</strong> — Optimisation 15min (support 50+ users)<br><br>' +
-    '<strong style="color:var(--accent-purple)">🎯 Modèles prévisions (pendant la saison)</strong><br><br>' +
-    '📊 <strong>ECMWF</strong> — Modèle européen (consensus NHC)<br>' +
-    '📊 <strong>GFS</strong> — Modèle américain NOAA<br>' +
-    '📊 <strong>UKMET</strong> — Modèle britannique<br>' +
-    '📊 <strong>HWRF</strong> — Modèle haute résolution ouragans<br><br>' +
+  showModal('ℹ️ Sources & Données',
+    '<strong>Cyclone Hunters</strong> — Surveillance cyclonique live pour les Antilles françaises 🌀<br>' +
+    '<span style="font-size:10px;color:#64748b">Données officielles NHC · Gratuit · Open source</span><br><br>' +
+
+    '<strong style="color:var(--accent-cyan)">🌀 Cyclones & Perturbations</strong><br><br>' +
+    '📡 <strong>NHC RSS</strong> (nhc.noaa.gov) — Systèmes actifs, INVEST, alertes<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">⏱ Mise à jour : toutes les 3-6h · Source officielle NOAA</span><br>' +
+    '🌊 <strong>NHC TWDAT</strong> — Discussion technique : ondes tropicales africaines<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">⏱ Mise à jour : 2-4×/jour selon activité · Cache 90 min</span><br>' +
+    '🎯 <strong>Trajectoires NHC</strong> — Forecast Advisory officiel (points H+12, H+24…)<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">⏱ Toutes les 6h (advisory impair) ou 3h (advisory spécial)</span><br><br>' +
+
+    '<strong style="color:var(--accent-cyan)">🌤️ Météo locale</strong><br><br>' +
+    '📊 <strong>Open-Meteo Marine</strong> — SST, vagues, vent Guadeloupe & Martinique<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">⏱ Mise à jour : toutes les heures · Cache 15 min</span><br>' +
+    '🚨 <strong>Météo-France</strong> — Alertes vigilance Guadeloupe, Martinique, Saint-Martin, Saint-Barth<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">⏱ Mise à jour : en continu · Cache 15 min</span><br><br>' +
+
+    '<strong style="color:var(--accent-cyan)">🗺️ Carte & Satellite</strong><br><br>' +
+    '🌍 <strong>Esri ArcGIS Ocean</strong> — Fond de carte bathymétrique<br>' +
+    '🛰️ <strong>NASA GIBS MODIS Terra</strong> — Imagerie satellite temps réel<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">⏱ Mise à jour : quotidienne (passage satellite ~10h30 UTC)</span><br>' +
+    '🌧️ <strong>RainViewer</strong> — Radar précipitations animé<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">⏱ Mise à jour : toutes les 10 min</span><br><br>' +
+
+    '<strong style="color:var(--accent-cyan)">✈️ Avion hunter</strong><br><br>' +
+    '✈️ <strong>OpenSky Network</strong> — Positions NOAA WP-3D Orion (N42RF Kermit, N43RF Miss Piggy)<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">⏱ Mise à jour : toutes les 5 min · Zone Atlantique + Golfe du Mexique</span><br><br>' +
+
+    '<strong style="color:var(--accent-cyan)">👨‍👩‍👧 Club famille</strong><br><br>' +
+    '🏆 <strong>Firebase Firestore</strong> — Scores XP, votes trajectoires, classement famille<br>' +
+    '<span style="font-size:10px;color:#64748b;margin-left:16px">Temps réel · Projet meteocyclone-cf7ce</span><br><br>' +
+
+    '<strong style="color:#475569;font-size:10px">' +
+    '🔄 Infrastructure : corsproxy.io → codetabs.com → allorigins.win (fallback CORS)<br>' +
+    'Cache intelligent : 5 min (RSS) · 15 min (météo) · 90 min (TWDAT) · Purge anti-erreur automatique' +
+    '</strong><br><br>' +
+
+    '<span style="font-size:10px;color:#475569">Les modèles de trajectoire (ECMWF, GFS, UKMET, HWRF) affichés représentent ' +
+    'la trajectoire NHC officielle avec une incertitude simulée par modèle. ' +
+    'Les données brutes de ces modèles ne sont pas accessibles gratuitement en temps réel.</span><br><br>' +
+
     'Fait avec ❤️ pour les Antilles françaises'
   );
 }
