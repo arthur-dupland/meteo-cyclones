@@ -1701,7 +1701,7 @@ function selectModel(btn) {
     activeModels.add(fullName);
     btn.style.opacity = '1';
     drawModelTrack(fullName);
-    showToast('📊 ' + fullName + ' — trajectoire affichée sur la carte');
+    // Le toast est géré dans drawModelTrack (soit trajectoire, soit "aucun système")
   }
   
   // Naviguer vers la carte
@@ -1733,8 +1733,9 @@ function drawModelTrack(modelName) {
       };
     });
   } else {
-    // Bassin calme — Hugo 1989 pédagogique
-    trackPoints = buildModelTrack(HUGO_TRACK, offset).map((pt, i) => ({ lat: pt[0], lon: pt[1], h: i*6 }));
+    // Bassin calme — pas de trajectoire fictive, on n'affiche rien
+    showToast('ℹ️ Aucun système actif — les modèles s'affichent dès qu'une tempête est dans le bassin');
+    return;
   }
   
   const track = trackPoints.map(p => [p.lat, p.lon]);
