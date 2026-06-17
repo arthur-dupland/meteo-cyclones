@@ -2172,40 +2172,72 @@ cities.forEach(city => {
 console.log('📍 ' + cities.length + ' villes ajoutées sur la carte');
 
 // ═══ CACHE INTELLIGENT ═══
-const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+// Durées différenciées selon la fréquence de mise à jour des sources
+const CACHE_DURATIONS = {
+  'MIATWDAT': 90 * 60 * 1000,    // TWDAT : rafraîchi toutes les 90min
+  'index-at.xml': 5 * 60 * 1000, // RSS NHC : 5min
+  'gtwo.php': 30 * 60 * 1000,    // TWO probabilités : 30min
+  'opensky': 5 * 60 * 1000,      // OpenSky : 5min
+  'DEFAULT': 15 * 60 * 1000
+};
+
+const INVALID_CACHE_PATTERNS = ['Too many requests','Too Many Requests','Error 4','403','429','503','Access denied','Forbidden'];
+
+function getCacheDuration(key) {
+  for (const [p, d] of Object.entries(CACHE_DURATIONS)) { if (key.includes(p)) return d; }
+  return CACHE_DURATIONS.DEFAULT;
+}
 
 function getCached(key) {
   try {
     const cached = localStorage.getItem('ch_cache_' + key);
     if (!cached) return null;
     const data = JSON.parse(cached);
-    if (Date.now() - data.timestamp > CACHE_DURATION) {
+    if (Date.now() - data.timestamp > getCacheDuration(key)) {
       localStorage.removeItem('ch_cache_' + key);
       return null;
     }
-    console.log('✅ Cache hit:', key);
+    console.log('✅ Cache hit:', key.substring(0,60));
     return data.value;
-  } catch(e) {
-    return null;
-  }
+  } catch(e) { return null; }
 }
 
 function setCache(key, value) {
-  try {
-    localStorage.setItem('ch_cache_' + key, JSON.stringify({
-      timestamp: Date.now(),
-      value: value
-    }));
-  } catch(e) {
-    console.warn('Cache storage failed:', e);
+  if (!value || typeof value !== 'string' || value.length < 50) return;
+  if (INVALID_CACHE_PATTERNS.some(p => value.includes(p))) {
+    console.warn('⚠️ Réponse invalide non mise en cache:', value.substring(0, 60));
+    return;
   }
+  try {
+    localStorage.setItem('ch_cache_' + key, JSON.stringify({ timestamp: Date.now(), value }));
+  } catch(e) { console.warn('Cache storage failed:', e); }
 }
+
+function purgeStaleCache() {
+  const toDelete = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k?.startsWith('ch_cache_')) continue;
+    try {
+      const data = JSON.parse(localStorage.getItem(k));
+      const age = Date.now() - (data.timestamp || 0);
+      const val = typeof data.value === 'string' ? data.value : '';
+      const isStale = age > 24*60*60*1000;
+      const isInvalid = INVALID_CACHE_PATTERNS.some(p => val.includes(p));
+      const isOldArtefact = /ts_or_|hu_center|td_td_|ts_arthur/.test(k);
+      if (isStale || isInvalid || isOldArtefact) toDelete.push(k);
+    } catch(e) { toDelete.push(k); }
+  }
+  toDelete.forEach(k => localStorage.removeItem(k));
+  if (toDelete.length) console.log('🧹 Cache purgé:', toDelete.length, 'entrées');
+}
+purgeStaleCache();
 
 // ═══ MULTI-PROXY FALLBACK ═══
 const PROXY_LIST = [
-  'https://api.allorigins.win/get?url=',      // JSON wrapper {contents}
-  'https://corsproxy.io/?',                   // texte brut direct
+  'https://corsproxy.io/?',                   // texte brut direct (priorité)
   'https://api.codetabs.com/v1/proxy?quest=', // texte brut direct
+  'https://api.allorigins.win/get?url=',      // JSON wrapper {contents} (fallback)
   'https://thingproxy.freeboard.io/fetch/'    // fallback texte brut
 ];
 
@@ -2289,10 +2321,22 @@ async function fetchActiveCyclones() {
     const items = [...xml.querySelectorAll('item')];
     
     // 2. Chercher les systèmes actifs dans les titres
+    // Trier les items : Summary/Advisory en premier, TWO en dernier
+    // (le premier item qui matche un ID le "réserve" — on veut celui avec la position)
+    const itemsSorted = [...items].sort((a, b) => {
+      const ta = a.querySelector('title')?.textContent || '';
+      const tb = b.querySelector('title')?.textContent || '';
+      const isDetailA = /summary|advisory|bulletin|forecast/i.test(ta);
+      const isDetailB = /summary|advisory|bulletin|forecast/i.test(tb);
+      if (isDetailA && !isDetailB) return -1;
+      if (!isDetailA && isDetailB) return 1;
+      return 0;
+    });
+    
     const systems = [];
     const seenIds = new Set();
     
-    items.forEach(item => {
+    itemsSorted.forEach(item => {
       const title = item.querySelector('title')?.textContent || '';
       const desc = item.querySelector('description')?.textContent || '';
       const fullText = title + ' ' + desc;
@@ -2435,16 +2479,18 @@ async function fetchActiveCyclones() {
       // Si pas de position trouvée, essayer l'API NHC GeoJSON
       if (!lat || !lon) {
         try {
-          // Pour les INVEST, essayer le format AL##
-          let stormId = sys.id;
-          if (sys.type === 'INVEST') {
-            // INVEST 98L -> al982026 (année actuelle)
+          // Construire l'ID NHC correct : AL012026 depuis le titre RSS
+          // Ex: "Summary for Tropical Storm Arthur (AT1/AL012026)" -> AL012026
+          let stormId = null;
+          const alMatch = sys.title?.match(/AL(\d{6})/i) || sys.fullText?.match(/AL(\d{6})/i);
+          if (alMatch) {
+            stormId = 'AL0' + alMatch[1].slice(1); // AL012026
+          } else if (sys.type === 'INVEST') {
             const num = sys.id.match(/\d+/)?.[0];
             const year = new Date().getFullYear();
-            if (num) {
-              stormId = `al${num}${year}`;
-            }
+            if (num) stormId = `al${num.padStart(2,'0')}${year}`;
           }
+          if (!stormId) stormId = sys.id;
           
           // Tenter de récupérer le GeoJSON
           const geoUrl = `https://www.nhc.noaa.gov/storm_graphics/api/${stormId}_CONE_latest.json`;
@@ -2491,9 +2537,9 @@ async function fetchActiveCyclones() {
     // 5. Mettre à jour le banner
     updateCalmeBanner();
     
-    if (enrichedSystems.length > 0) {
-      console.log(`🌀 ${enrichedSystems.length} système(s) actif(s) détecté(s):`);
-      enrichedSystems.forEach(s => console.log(`  - ${s.name} (${s.type})`));
+    if (activeCyclones.length > 0) {
+      console.log(`🌀 ${activeCyclones.length} système(s) actif(s) détecté(s):`);
+      activeCyclones.forEach(s => console.log(`  - ${s.name} (${s.type})`));
     } else {
       console.log('✅ Bassin Atlantique calme - aucun système actif');
     }
@@ -4195,15 +4241,19 @@ function updateProData() {
 
 // Parseur d'ondes tropicales depuis le bulletin TWDAT
 function parseTWDAT(rawHtml) {
-  // Extraire le texte brut du bloc <pre> (le bulletin NHC est dans une balise <pre>)
+  // corsproxy retourne le HTML brut de la page NHC
+  // Le bulletin est dans un bloc <pre> ou directement dans le texte
   let text = rawHtml;
   const preMatch = rawHtml.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
   if (preMatch) {
-    text = preMatch[1].replace(/<[^>]+>/g, ''); // enlever les balises internes (liens)
+    text = preMatch[1].replace(/<[^>]+>/g, '');
   } else {
-    // Fallback: enlever tout le HTML
-    text = rawHtml.replace(/<[^>]+>/g, ' ');
+    // corsproxy retourne parfois le texte brut directement (sans HTML)
+    text = rawHtml.replace(/<[^>]+>/g, ' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
   }
+  // Chercher le début du bulletin TWDAT (commence par AXNT20)
+  const bulletinStart = text.indexOf('AXNT20');
+  if (bulletinStart > 0) text = text.substring(bulletinStart);
   
   const waves = [];
   // Trouver la section TROPICAL WAVES
@@ -4299,7 +4349,7 @@ async function fetchTWO() {
     // Fetch en parallèle : TWO (probabilités) + TWDAT (discussion avec ondes)
     const [twoText, twdatText] = await Promise.allSettled([
       fetchWithFallback('https://www.nhc.noaa.gov/gtwo.php?basin=atlc&fdays=5'),
-      fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.nhc.noaa.gov/text/MIATWDAT.shtml')).then(r=>r.json()).then(d=>d.contents||'').catch(()=>'')
+      fetchWithFallback('https://www.nhc.noaa.gov/text/MIATWDAT.shtml')
     ]);
 
     // ── Ondes tropicales depuis TWDAT ──
