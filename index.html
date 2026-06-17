@@ -2416,13 +2416,22 @@ async function fetchActiveCyclones() {
         pressure = parseInt(pressMatch[1]);
       }
       
-      // Chercher position dans le texte (format: 12.3N 45.6W)
+      // Chercher position dans le texte — plusieurs formats NHC :
+      // "28.9N 95.7W"  |  "near 28.9, -95.7"  |  "28.9°N 95.7°W"
       const posMatch = sys.fullText.match(/(\d+\.?\d*)\s*[°]?N[^\d]*(\d+\.?\d*)\s*[°]?W/i);
       if (posMatch) {
         lat = parseFloat(posMatch[1]);
         lon = -parseFloat(posMatch[2]);
       }
-      
+      // Format décimal signé : "near 28.9, -95.7" ou "located near 28.9 -95.7"
+      if (!lat || !lon) {
+        const decMatch = sys.fullText.match(/(?:near|located\s+near)\s+([\d.]+)[,\s]+([-][\d.]+)/i);
+        if (decMatch) {
+          lat = parseFloat(decMatch[1]);
+          lon = parseFloat(decMatch[2]); // déjà négatif
+        }
+      }
+
       // Si pas de position trouvée, essayer l'API NHC GeoJSON
       if (!lat || !lon) {
         try {
@@ -2458,12 +2467,11 @@ async function fetchActiveCyclones() {
         }
       }
       
-      // Fallback : position estimée dans le bassin si toujours pas de position
+      // Fallback : si toujours pas de position, ne pas placer le marqueur
+      // (mieux vaut ne rien afficher que placer à 15N/60W par erreur)
       if (!lat || !lon) {
-        // Utiliser une position centrale par défaut
-        lat = 15;
-        lon = -60;
-        console.log(`⚠️ Position par défaut pour ${sys.name}`);
+        console.warn(`⚠️ Position introuvable pour ${sys.name} — marqueur non affiché`);
+        return null;
       }
       
       return {
@@ -2475,10 +2483,10 @@ async function fetchActiveCyclones() {
       };
     }));
     
-    activeCyclones = enrichedSystems;
+    activeCyclones = enrichedSystems.filter(Boolean);
     
     // 4. Afficher sur la carte
-    renderCyclonesOnMap(enrichedSystems);
+    renderCyclonesOnMap(activeCyclones);
     
     // 5. Mettre à jour le banner
     updateCalmeBanner();
@@ -2976,7 +2984,7 @@ function getSimFallback(){
 }
 
 async function fetchOpenSky(){
-  const url='https://opensky-network.org/api/states/all?lamin=-5&lomin=-80&lamax=35&lomax=-10';
+  const url='https://opensky-network.org/api/states/all?lamin=-5&lomin=-100&lamax=35&lomax=-10';
   try{
     // Utiliser fetchWithFallback pour cache + multi-proxy
     const response = await fetchWithFallback(url);
@@ -4183,44 +4191,190 @@ function updateProData() {
   }
 }
 
-// ── TWO Parser (Tropical Weather Outlook NHC) ──
+// ── TWO + TWDAT Parser (Tropical Weather Outlook + Discussion NHC) ──
+
+// Parseur d'ondes tropicales depuis le bulletin TWDAT
+function parseTWDAT(rawHtml) {
+  // Extraire le texte brut du bloc <pre> (le bulletin NHC est dans une balise <pre>)
+  let text = rawHtml;
+  const preMatch = rawHtml.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+  if (preMatch) {
+    text = preMatch[1].replace(/<[^>]+>/g, ''); // enlever les balises internes (liens)
+  } else {
+    // Fallback: enlever tout le HTML
+    text = rawHtml.replace(/<[^>]+>/g, ' ');
+  }
+  
+  const waves = [];
+  // Trouver la section TROPICAL WAVES
+  const waveSection = text.match(/\.\.\.TROPICAL WAVES\.\.\.(.*?)(?:\.\.\.(?:MONSOON|GULF|CARIBBEAN|ATLANTIC|SPECIAL)|\$\$)/si);
+  if (!waveSection) return waves;
+
+  const sectionText = waveSection[1];
+  // Chaque paragraphe décrit une onde
+  const paragraphs = sectionText.split(/\n\n+/).filter(p => p.trim().length > 20);
+
+  for (const para of paragraphs) {
+    const clean = para.replace(/\n/g, ' ').trim();
+    if (!clean) continue;
+
+    // Extraire la longitude principale (axis near XX W ou along XXW)
+    const lonMatch = clean.match(/(?:axis|along)\s+(?:near\s+)?([\d.]+)W(?:[- ]([\d.]+)W)?/i);
+    // Extraire la latitude (S of XX N, N of XX N, entre XXN et XXN)
+    const latMatch = clean.match(/(?:S of|N of|near|south of|north of)\s+([\d.]+)N/i)
+                  || clean.match(/([\d.]+)N\s+to\s+([\d.]+)N/i);
+    // Extraire la vitesse (moving westward at XX kt, westward XX to XX kt)
+    const spdMatch = clean.match(/moving\s+(?:westward|west)(?:\s+at)?\s+([\d]+)(?:\s+to\s+([\d]+))?\s+kt/i);
+
+    if (!lonMatch) continue; // Pas de position = pas utile
+
+    const lon = -(parseFloat(lonMatch[1]));
+    const lat = latMatch ? parseFloat(latMatch[1]) : 10; // défaut 10N si pas précisé
+    const speed = spdMatch ? (parseInt(spdMatch[1]) + (spdMatch[2] ? parseInt(spdMatch[2]) : parseInt(spdMatch[1]))) / 2 : 15;
+
+    // Zone géographique
+    let zone = 'Atlantique';
+    if (clean.match(/caribbean/i)) zone = 'Caraïbes';
+    else if (clean.match(/east.*atl|eastern.*atl|far.*east/i)) zone = 'Atlantique Est';
+    else if (clean.match(/central.*atl/i)) zone = 'Atlantique Central';
+    else if (lon > -40) zone = 'Atlantique Est';
+    else if (lon > -60) zone = 'Atlantique Central';
+    else zone = 'Caraïbes';
+
+    // Activité convective
+    const hasConvection = /scattered|numerous|moderate|strong|convection|shower/i.test(clean);
+    const convLevel = /numerous|strong/i.test(clean) ? 'forte' : hasConvection ? 'modérée' : 'faible';
+
+    waves.push({ lon, lat, zone, speed, convLevel, text: clean.substring(0, 180) });
+  }
+  return waves;
+}
+
+// Marqueurs de carte pour les ondes tropicales
+let _waveMarkers = [];
+function clearWaveMarkers() {
+  _waveMarkers.forEach(m => { try { map.removeLayer(m); } catch(e){} });
+  _waveMarkers = [];
+}
+
+function renderWaveMarkers(waves) {
+  clearWaveMarkers();
+  waves.forEach((w, i) => {
+    const color = w.convLevel === 'forte' ? '#f97316' : w.convLevel === 'modérée' ? '#fbbf24' : '#60a5fa';
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        background:${color}22;border:2px solid ${color};border-radius:50%;
+        width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+        font-size:15px;box-shadow:0 0 8px ${color}66;cursor:pointer
+      ">🌊</div>`,
+      iconSize: [32, 32], iconAnchor: [16, 16]
+    });
+    const marker = L.marker([w.lat, w.lon], { icon })
+      .addTo(map)
+      .bindPopup(`
+        <div style="min-width:200px">
+          <div style="font-weight:800;font-size:13px;margin-bottom:4px">🌊 Onde tropicale — ${w.zone}</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">
+            Position : ${Math.abs(w.lon).toFixed(1)}°W / ${w.lat.toFixed(1)}°N<br>
+            Vitesse : ~${Math.round(w.speed)} kt vers l'ouest<br>
+            Convection : ${w.convLevel}
+          </div>
+          <div style="font-size:10px;color:#64748b;border-top:1px solid #334155;padding-top:4px">${w.text}</div>
+        </div>
+      `);
+    // Flèche direction ouest
+    const arrowIcon = L.divIcon({
+      className: '',
+      html: `<div style="color:${color};font-size:14px;transform:rotate(180deg)">➤</div>`,
+      iconSize: [16, 16], iconAnchor: [8, 8]
+    });
+    const arrow = L.marker([w.lat, w.lon + 1.5], { icon: arrowIcon }).addTo(map);
+    _waveMarkers.push(marker, arrow);
+  });
+}
+
 async function fetchTWO() {
   try {
-    // TWO = page HTML du NHC — fetchWithFallback retourne maintenant du texte brut
-    const url = 'https://www.nhc.noaa.gov/gtwo.php?basin=atlc&fdays=5';
-    let text;
-    try { text = await fetchWithFallback(url); } catch(e) { renderTWODefault(); return; }
+    // Fetch en parallèle : TWO (probabilités) + TWDAT (discussion avec ondes)
+    const [twoText, twdatText] = await Promise.allSettled([
+      fetchWithFallback('https://www.nhc.noaa.gov/gtwo.php?basin=atlc&fdays=5'),
+      fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.nhc.noaa.gov/text/MIATWDAT.shtml')).then(r=>r.json()).then(d=>d.contents||'').catch(()=>'')
+    ]);
+
+    // ── Ondes tropicales depuis TWDAT ──
+    if (twdatText.status === 'fulfilled' && twdatText.value) {
+      const waves = parseTWDAT(twdatText.value);
+      if (waves.length > 0) {
+        renderWaveMarkers(waves);
+        renderTWDAT(waves);
+      }
+    }
+
+    // ── Invests / probabilités depuis TWO ──
+    let text = twoText.status === 'fulfilled' ? twoText.value : '';
     if (!text || text.length < 100) { renderTWODefault(); return; }
-    // S'assurer que c'est bien du HTML (pas un objet JSON stringifié)
     if (text.startsWith('{') || text.startsWith('[')) {
       try { const j = JSON.parse(text); text = j.contents || text; } catch(e) {}
     }
 
-    // Parser les systèmes du TWO
-    const systems = [];
-    // Regex pour capturer les zones avec probabilités
-    const re2d = /(\d+)%.*?2.day/gi;
-    const re5d = /(\d+)%.*?5.day/gi;
     const investRe = /INVEST\s+(\d+[A-Z])/gi;
-
-    let invests = [];
-    let m;
+    let invests = [], m;
     while ((m = investRe.exec(text)) !== null) invests.push(m[1]);
-
-    // Chercher probabilités
     const prob2matches = [...text.matchAll(/(\d+)\s*percent/gi)];
 
     if (prob2matches.length > 0 || invests.length > 0) {
-      // Des systèmes détectés
       const probs = prob2matches.slice(0, 4).map(m => parseInt(m[1]));
       renderTWO(invests, probs);
     } else {
-      renderTWODefault();
+      // Vérifier si le TWDAT avait des ondes pour ne pas afficher "aucune zone"
+      const twoContainer = document.getElementById('two-container');
+      if (twoContainer && !twoContainer.querySelector('.twdat-panel')) {
+        renderTWODefault();
+      }
     }
   } catch(e) {
     renderTWODefault();
     console.warn('TWO fetch:', e);
   }
+}
+
+function renderTWDAT(waves) {
+  const container = document.getElementById('two-container');
+  if (!container) return;
+
+  // Insérer les ondes TWDAT AVANT le contenu TWO existant (ou à la place du "aucune zone")
+  const existingDefault = container.querySelector('[style*="22c55e"]');
+  if (existingDefault) existingDefault.remove();
+
+  // Éviter le doublon si déjà rendu
+  const existing = container.querySelector('.twdat-panel');
+  if (existing) existing.remove();
+
+  const waveItems = waves.map(w => {
+    const color = w.convLevel === 'forte' ? '#f97316' : w.convLevel === 'modérée' ? '#fbbf24' : '#60a5fa';
+    return `<div class="two-system" style="align-items:flex-start;gap:8px">
+      <div style="font-size:18px;margin-top:2px">🌊</div>
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:700;color:#f0f8ff">${w.zone}</div>
+        <div style="font-size:10px;color:#94a3b8">${Math.abs(w.lon).toFixed(1)}°W · ~${Math.round(w.speed)} kt</div>
+        <div style="font-size:9px;margin-top:2px">
+          <span style="color:${color};font-weight:600">Convection ${w.convLevel}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const panel = document.createElement('div');
+  panel.className = 'twdat-panel';
+  panel.innerHTML = `<div class="two-panel" style="border-color:rgba(96,165,250,.3);background:rgba(96,165,250,.06)">
+    <div class="two-title" style="color:#60a5fa">🌊 ONDES TROPICALES (TWDAT NHC)</div>
+    ${waveItems}
+    <div style="font-size:9px;color:#475569;margin-top:4px;border-top:1px solid #1e293b;padding-top:4px">
+      Source : NHC Tropical Weather Discussion · Cliquer sur 🌊 sur la carte
+    </div>
+  </div>`;
+  container.insertBefore(panel, container.firstChild);
 }
 
 function renderTWO(invests, probs) {
@@ -4236,7 +4390,7 @@ function renderTWO(invests, probs) {
   invests.forEach((inv, i) => {
     const p = probs[i] || probs[0] || 10;
     const cls = p >= 60 ? 'high' : p >= 40 ? 'med' : 'low';
-    const label = p >= 60 ? '⚠️ Élevée' : p >= 40 ? '⚡ Modérée' : '🔵 Faible';
+    const label = p >= 60 ? '⚠️ Élevée' : p >= 40 ? '⡠ Modérée' : '🔵 Faible';
     html += `<div class="two-system">
       <div>
         <div style="font-size:12px;font-weight:800;color:#f0f8ff">INVEST ${inv}</div>
@@ -4244,19 +4398,25 @@ function renderTWO(invests, probs) {
       </div>
       <div class="two-prob ${cls}">${p}%</div>
     </div>`;
-    // Mettre à jour le statut du corps si probabilité haute
     if (p >= 60) setBasinStatus('invest');
   });
 
-  container.innerHTML = `<div class="two-panel"><div class="two-title">📡 ZONES À SURVEILLER</div>${html}</div>`;
+  // Ajouter après le panel TWDAT si présent
+  const existingTWO = container.querySelector('.two-invest-panel');
+  if (existingTWO) existingTWO.remove();
+  const twoPanel = document.createElement('div');
+  twoPanel.className = 'two-invest-panel';
+  twoPanel.innerHTML = `<div class="two-panel"><div class="two-title">📡 ZONES À SURVEILLER</div>${html}</div>`;
+  container.appendChild(twoPanel);
 }
 
 function renderTWODefault() {
   const container = document.getElementById('two-container');
-  if (container) container.innerHTML = '<div style="font-size:11px;color:#22c55e;text-align:center;padding:8px">✅ Aucune zone à surveiller actuellement</div>';
+  if (!container) return;
+  // Ne pas écraser le panel TWDAT s'il est déjà là
+  if (container.querySelector('.twdat-panel')) return;
+  container.innerHTML = '<div style="font-size:11px;color:#22c55e;text-align:center;padding:8px">✅ Aucune onde ni zone à surveiller</div>';
 }
-
-
 // ── Dashboard contextuel : statut du bassin ──
 let _currentStatus = 'calme';
 function setBasinStatus(status) {
