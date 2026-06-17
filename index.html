@@ -624,6 +624,7 @@ body.expert-mode .expert-strip{display:grid}
     <button class="nav-btn active" id="nav-radar" onclick="setNav('radar',this)"><span class="nav-icon">📡</span>RADAR</button>
     <button class="nav-btn" id="nav-carte" onclick="setNav('carte',this)"><span class="nav-icon">🛰️</span>MODÈLES</button>
     <button class="nav-btn" id="nav-labo" onclick="setNav('labo',this)"><span class="nav-icon">🔬</span>LABO</button>
+    <button class="nav-btn" id="nav-bulletin" onclick="setNav('bulletin',this)"><span class="nav-icon">📻</span>BULLETIN</button>
     <button class="nav-btn" id="nav-explorer" onclick="setNav('explorer',this)"><span class="nav-icon">🔭</span>EXPLORER</button>
     <button class="nav-btn" onclick="openDefisModal()"><span class="nav-icon">🏆</span>DÉFIS</button>
     <button class="nav-btn" onclick="openJitsi()"><span class="nav-icon">🎙️</span>VOCAL</button>
@@ -955,6 +956,97 @@ body.expert-mode .expert-strip{display:grid}
     </div>
 
     <!-- VUE EXPLORER -->
+
+    <!-- VUE BULLETIN -->
+    <div class="nav-view" id="view-bulletin">
+      <div style="padding:20px;overflow-y:auto;height:100%;max-width:680px;margin:0 auto">
+
+        <!-- En-tête -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <span style="font-size:28px">📻</span>
+          <div>
+            <div style="font-family:'Orbitron',sans-serif;font-size:16px;font-weight:900;color:var(--accent-cyan)">Bulletin Météo Quotidien</div>
+            <div style="font-size:11px;color:#64748b">Publié chaque matin · Données NHC & Météo-France</div>
+          </div>
+        </div>
+
+        <!-- Disclaimer famille — très visible -->
+        <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:10px;padding:12px 14px;margin:14px 0;font-size:11px;line-height:1.6;color:#94a3b8">
+          <div style="font-weight:800;color:#fbbf24;margin-bottom:4px">🏠 Bulletin familial — pas un service météo professionnel</div>
+          Ce bulletin est rédigé automatiquement par une IA à partir des données officielles NHC et Météo-France,
+          puis relu et publié par <strong style="color:#f0f8ff">Caroline, Théo et Arthur</strong> — une famille qui suit
+          la météo tropicale depuis les Antilles françaises.<br><br>
+          <strong style="color:#fbbf24">Pour toute décision de sécurité</strong> (évacuation, confinement, préparation cyclone),
+          consultez uniquement <a href="https://meteofrance.gp" target="_blank" style="color:#60a5fa">Météo-France Antilles</a>
+          et le <a href="https://nhc.noaa.gov" target="_blank" style="color:#60a5fa">National Hurricane Center</a>.
+        </div>
+
+        <!-- Bulletin du jour -->
+        <div id="bulletin-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px">
+
+          <!-- Date et statut fraîcheur -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
+            <div>
+              <div id="bulletin-date" style="font-size:13px;font-weight:800;color:#f0f8ff">Chargement...</div>
+              <div id="bulletin-heure" style="font-size:10px;color:#64748b"></div>
+            </div>
+            <div id="bulletin-freshness-badge" style="font-size:10px;padding:3px 8px;border-radius:20px;font-weight:700"></div>
+          </div>
+
+          <!-- Texte du bulletin -->
+          <div id="bulletin-texte" style="font-size:13px;line-height:1.8;color:#cbd5e1;white-space:pre-wrap">
+            Chargement du bulletin...
+          </div>
+
+          <!-- Sources -->
+          <div id="bulletin-sources" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-size:10px;color:#475569"></div>
+        </div>
+
+        <!-- Avertissement si bulletin trop vieux -->
+        <div id="bulletin-stale-warning" style="display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:10px 14px;font-size:11px;color:#fca5a5;margin-bottom:14px">
+          ⚠️ Ce bulletin date de plus de 36h. La génération automatique a peut-être rencontré un problème.
+          Consultez directement <a href="https://nhc.noaa.gov" target="_blank" style="color:#60a5fa">nhc.noaa.gov</a>.
+        </div>
+
+        <!-- Bulletins précédents -->
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:#475569;margin-bottom:8px;font-weight:600">BULLETINS PRÉCÉDENTS</div>
+          <div id="bulletin-archive" style="font-size:11px;color:#64748b">
+            <!-- Rempli dynamiquement -->
+          </div>
+        </div>
+
+        <!-- Signature famille -->
+        <div style="margin-top:24px;padding:16px;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;text-align:center">
+          <div style="font-size:11px;color:#64748b;margin-bottom:12px;font-weight:600">VOS PRÉSENTATEURS</div>
+          <div style="display:flex;justify-content:center;gap:24px;align-items:flex-end;margin-bottom:10px">
+            <div style="text-align:center">
+              <img src="theo.png" alt="Théo" style="width:72px;height:72px;object-fit:cover;object-position:center top;border-radius:50%;border:2px solid var(--accent-cyan);display:block;margin:0 auto 6px">
+              <div style="font-size:12px;font-weight:800;color:var(--accent-cyan)">THÉO</div>
+              <div style="font-size:10px;color:#64748b">Chasseur de cyclones</div>
+            </div>
+            <div style="text-align:center">
+              <img src="arthur.png" alt="Arthur" style="width:72px;height:72px;object-fit:cover;object-position:center top;border-radius:50%;border:2px solid #f59e0b;display:block;margin:0 auto 6px">
+              <div style="font-size:12px;font-weight:800;color:#f59e0b">ARTHUR</div>
+              <div style="font-size:10px;color:#64748b">Chasseur de cyclones</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#475569;line-height:1.6">
+            Bulletin relu et validé par Caroline, Théo et Arthur<br>
+            <span style="font-size:10px">Une famille des Antilles françaises 🌴</span>
+          </div>
+        </div>
+
+        <!-- Note technique -->
+        <div style="margin-top:14px;font-size:10px;color:#334155;line-height:1.6;text-align:center">
+          Généré automatiquement par IA (Claude · Anthropic) · Pipeline GitHub Actions<br>
+          Données brutes : NHC RSS · NHC TWDAT · Open-Meteo Marine · Météo-France<br>
+          <a href="https://github.com/arthur-dupland/meteo-cyclones" target="_blank" style="color:#475569">Code source</a>
+        </div>
+
+      </div>
+    </div>
+
     <div class="nav-view" id="view-explorer">
       <div style="padding:20px;overflow-y:auto;height:100%">
         <div class="explorer-title">🔭 Explorer</div>
@@ -1420,6 +1512,7 @@ body.expert-mode .expert-strip{display:grid}
     <button class="bnav-btn" id="bnav-models" onclick="mobileNav('models',this)"><span class="bicon">🎯</span>MODÈLES</button>
     <button class="bnav-btn" id="bnav-alerts" onclick="mobileNav('alerts',this)"><span class="bicon">🚨</span>ALERTES</button>
     <button class="bnav-btn" id="bnav-labo" onclick="mobileNav('labo',this)"><span class="bicon">🔬</span>LABO</button>
+    <button class="bnav-btn" id="bnav-bulletin" onclick="mobileNav('bulletin',this)"><span class="bicon">📻</span>BULLETIN</button>
     <button class="bnav-btn" id="bnav-explorer" onclick="mobileNav('explorer',this)"><span class="bicon">🔭</span>EXPLORER</button>
     <button class="bnav-btn" onclick="openDefisModal()"><span class="bicon">🎮</span>DÉFIS</button>
     <button class="bnav-btn" id="bnav-club" onclick="mobileNav('club',this)"><span class="bicon">🏆</span>CLUB</button>
@@ -4085,7 +4178,7 @@ function showComprendre(){
 }}
 
 // ═══ NAV DESKTOP ═══
-const VIEWS=['radar','carte','labo','explorer'];
+const VIEWS=['radar','carte','labo','bulletin','explorer'];
 function setNav(id,btn){
   VIEWS.forEach(v=>{
     const el=document.getElementById('view-'+v);
@@ -4095,12 +4188,13 @@ function setNav(id,btn){
   document.querySelectorAll('.nav-btn[id^="nav-"]').forEach(b=>b.classList.remove('active'));
   if(btn)btn.classList.add('active');
   // Titre carte
-  const titles={radar:'ATLANTIQUE TROPICAL — RADAR',carte:'TRAJECTOIRES & MODÈLES',labo:'LABORATOIRE CYCLONE',explorer:'EXPLORER LES ANTILLES'};
+  const titles={radar:'ATLANTIQUE TROPICAL — RADAR',carte:'TRAJECTOIRES & MODÈLES',labo:'LABORATOIRE CYCLONE',bulletin:'BULLETIN MÉTÉO QUOTIDIEN',explorer:'EXPLORER LES ANTILLES'};
   fill('map-title-txt',titles[id]||'CYCLONE HUNTERS');
   addXP(2);
   if(id==='radar'&&typeof map!=='undefined'){
     setTimeout(()=>map.invalidateSize(),50);
   }
+  if(id==='bulletin') loadBulletin();
 }
 // Init : montrer seulement radar
 VIEWS.forEach(v=>{
@@ -4338,6 +4432,94 @@ function updateProData() {
     riEl.style.color = ri > 20 ? '#ef4444' : ri > 10 ? '#f59e0b' : '#22c55e';
   }
 }
+
+
+// ═══ BULLETIN MÉTÉO QUOTIDIEN ═══
+async function loadBulletin() {
+  const card = document.getElementById('bulletin-card');
+  const texteEl = document.getElementById('bulletin-texte');
+  const dateEl = document.getElementById('bulletin-date');
+  const heureEl = document.getElementById('bulletin-heure');
+  const sourcesEl = document.getElementById('bulletin-sources');
+  const badgeEl = document.getElementById('bulletin-freshness-badge');
+  const staleEl = document.getElementById('bulletin-stale-warning');
+  const archiveEl = document.getElementById('bulletin-archive');
+
+  try {
+    // Charger le bulletin depuis le repo GitHub
+    const url = 'https://raw.githubusercontent.com/arthur-dupland/meteo-cyclones/main/bulletin/latest.json';
+    const r = await fetch(url + '?_=' + Date.now()); // no-cache
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const b = await r.json();
+
+    // Date et heure
+    const dateObj = new Date(b.generated_at || b.date + 'T' + (b.heure || '10:00') + ':00Z');
+    const dateStr = dateObj.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    const heureStr = dateObj.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }) + ' UTC';
+    if (dateEl) dateEl.textContent = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+    if (heureEl) heureEl.textContent = 'Généré à ' + heureStr;
+
+    // Vérifier fraîcheur (>36h = vieux)
+    const ageH = (Date.now() - dateObj.getTime()) / 3600000;
+    if (badgeEl) {
+      if (ageH < 12) {
+        badgeEl.textContent = '✅ Bulletin du jour';
+        badgeEl.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:20px;font-weight:700;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)';
+      } else if (ageH < 36) {
+        badgeEl.textContent = '🕐 ' + Math.round(ageH) + 'h';
+        badgeEl.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:20px;font-weight:700;background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.3)';
+      } else {
+        badgeEl.textContent = '⚠️ Ancien bulletin';
+        badgeEl.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:20px;font-weight:700;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)';
+        if (staleEl) staleEl.style.display = 'block';
+      }
+    }
+
+    // Texte du bulletin
+    if (texteEl) texteEl.textContent = b.texte || 'Bulletin indisponible.';
+
+    // Sources
+    if (sourcesEl && b.sources) {
+      sourcesEl.innerHTML = '📡 Sources : ' + b.sources.join(' · ');
+    }
+
+    // Archive des bulletins précédents
+    if (archiveEl && b.archive && b.archive.length > 0) {
+      archiveEl.innerHTML = b.archive.map(a => {
+        const d = new Date(a.date);
+        const dStr = d.toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
+        return '<div style="padding:6px 0;border-bottom:1px solid #1e293b;display:flex;justify-content:space-between;align-items:center">' +
+          '<span>' + dStr + '</span>' +
+          '<a href="https://raw.githubusercontent.com/arthur-dupland/meteo-cyclones/main/bulletin/' + a.fichier + '" ' +
+          'target="_blank" style="color:#60a5fa;font-size:10px">Lire →</a>' +
+          '</div>';
+      }).join('');
+    } else if (archiveEl) {
+      archiveEl.innerHTML = '<span style="color:#334155">Les bulletins précédents apparaîtront ici.</span>';
+    }
+
+  } catch(e) {
+    // Bulletin pas encore généré ou pipeline pas encore configuré
+    if (texteEl) texteEl.innerHTML =
+      '<div style="text-align:center;padding:20px;color:#475569">' +
+      '<div style="font-size:32px;margin-bottom:8px">📭</div>' +
+      '<div style="font-weight:700;color:#64748b;margin-bottom:4px">Bulletin pas encore disponible</div>' +
+      '<div style="font-size:11px;line-height:1.6">Le pipeline de génération automatique sera actif prochainement.<br>' +
+      'En attendant, consultez directement ' +
+      '<a href="https://nhc.noaa.gov" target="_blank" style="color:#60a5fa">nhc.noaa.gov</a> ' +
+      'et <a href="https://meteofrance.gp" target="_blank" style="color:#60a5fa">météofrance.gp</a>.</div>' +
+      '</div>';
+    if (dateEl) dateEl.textContent = 'Prochainement';
+    if (badgeEl) {
+      badgeEl.textContent = '🔧 En préparation';
+      badgeEl.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:20px;font-weight:700;background:rgba(100,116,139,.15);color:#64748b;border:1px solid rgba(100,116,139,.3)';
+    }
+  }
+}
+
+// Charger le bulletin quand on ouvre l'onglet
+const _origSetNav = setNav;
+// Hook sur setNav pour charger le bulletin à la demande
 
 // ── TWO + TWDAT Parser (Tropical Weather Outlook + Discussion NHC) ──
 
